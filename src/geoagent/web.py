@@ -81,7 +81,15 @@ def map_layers(tool_calls: list[dict]) -> dict:
                 continue
             v = values[0]
             label = f"{v.get('distance_km')} km, bearing {v.get('initial_bearing_deg')} deg"
-            layers["lines"].append({"from": p1, "to": p2, "label": label})
+            layers["lines"].append(
+                {
+                    "from": p1,
+                    "to": p2,
+                    "label": label,
+                    "distance_km": v.get("distance_km"),
+                    "bearing_deg": v.get("initial_bearing_deg"),
+                }
+            )
 
         elif name in ("nearest_features", "features_within"):
             for v in values:

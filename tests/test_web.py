@@ -36,6 +36,7 @@ def test_distance_becomes_a_labelled_line():
     line = web.map_layers([call])["lines"][0]
     assert line["from"] == [1.0, 2.0] and line["to"] == [3.0, 4.0]
     assert "290.5 km" in line["label"]
+    assert line["distance_km"] == 290.5 and line["bearing_deg"] == 87.3  # numbers for the UI's stat chips
 
 
 def test_list_results_and_radius_circle():

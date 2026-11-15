@@ -71,9 +71,11 @@ geoagent-web          # then open http://127.0.0.1:8000
 
 Pick a model, click an example or type a question. Lookups, distance lines, radius circles, polygons and results are drawn on the map; each tool call can be expanded to show its arguments and raw result.
 
-![Distance question: two lookups, a labelled line on the map, and the tool-call trail](docs/ui-distance.jpg)
+![Distance question: a curved route between two lookups, distance and bearing as stat chips, and the tool-call timeline](docs/ui-distance.jpg)
 
-![Radius question: a 300 km circle around Hyderabad and the airports found inside it](docs/ui-radius.jpg)
+![Radius question: a 150 km circle around Mumbai and the airports found inside it](docs/ui-radius.jpg)
+
+The UI follows your system light or dark theme. It shows what the tools returned next to what the model said, so you can spot a bad answer: the stat chips come from the tool results, not from the model's text.
 
 Notes: the map tiles come from OpenStreetMap, so the map needs an internet connection (the tools and model do not). The server binds to `127.0.0.1` only and has no login, because it can drive your model server; do not expose it to a network.
 
@@ -139,6 +141,8 @@ Reading this honestly: Qwen was already perfect on the held-out cases, so there 
 - **Llama 3.1 8B sent the polygon as a JSON string**, which the tool rejected. The evals exposed this; the tool now accepts either form. After the prompt change Llama's polygon answers went wrong again for a different reason (it emitted malformed tool calls as text), so small-model reliability here is not just a prompt problem.
 - **Llama 3.1 8B often skips `geocode`**, answering nearest/radius questions correctly from remembered coordinates. That counts as a tool-selection miss even when the answer is right.
 
+A gap the evals did not catch: while testing the web UI, "Which airports are within 300 km of Hyderabad?" made `qwen2.5:14b` answer in Chinese and list two airports that are not in the dataset (the tool had returned only one place). That question is not in the eval set, and the 3-run results above do not predict it. It is on the roadmap as a new eval case.
+
 Caveats: 18 cases is a small sample, so read the percentages as indicative only. The before/after tables above compare single runs from earlier in development; during that work Qwen passed the Mysuru-Bengaluru case once and failed it in the next two runs with the same prompt, which I could not explain (the final 3-run measurement shows no such variation, so it may have been an Ollama state effect). Treat any one-off difference of a single case with suspicion. Answers are scored with deterministic rules (no LLM judge), documented at the top of [evals/run_evals.py](evals/run_evals.py). Boolean answers only count if `point_in_polygon` actually ran, a rule added after a first run showed an error message being misread as a "no".
 
 ## Roadmap
@@ -150,6 +154,7 @@ Caveats: 18 cases is a small sample, so read the percentages as indicative only.
 - [x] Fix what the evals found (the polygon argument now accepts a JSON string) and re-run
 - [x] Tighten the prompt and tool descriptions, checked on held-out cases
 - [x] Repeat each case 3 times to measure variance (results were identical across runs)
+- [ ] Add the Hyderabad 300 km case to the evals, try an "answer in English" rule, and re-run
 - [ ] Try a stricter tool-call format or a stronger model for the "invents places" failures
 - [ ] Repeat each case several times to measure run-to-run variance
 - [x] Local web UI: answer, tool-call trail and a map
