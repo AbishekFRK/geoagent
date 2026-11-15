@@ -19,10 +19,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+web = ["starlette>=0.40", "uvicorn>=0.30"]
+dev = ["pytest>=8", "starlette>=0.40", "uvicorn>=0.30"]
 
 [project.scripts]
 geoagent-server = "geoagent.server:main"
+geoagent-web = "geoagent.web:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/geoagent"]

@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeoAgent</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    --bg: #f4f6f9; --panel: #ffffff; --text: #1a2030; --muted: #566074; --border: #d9dee7;
+    --accent: #1b5fcf; --accent-text: #ffffff; --code: #eef1f5; --ok: #17703f; --err: #b42318;
+    --chip: #e9eef8; --warn-bg: #fff4e5; --warn: #8a4b00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1116; --panel: #161b22; --text: #e6e9ef; --muted: #9aa4b5; --border: #2a313c;
+      --accent: #4c8dff; --accent-text: #0b1220; --code: #0d1117; --ok: #3fb950; --err: #f85149;
+      --chip: #1e2733; --warn-bg: #2b2112; --warn: #f0b429;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: grid; grid-template-columns: minmax(340px, 430px) 1fr; grid-template-rows: 100%;
+  }
+  aside { background: var(--panel); border-right: 1px solid var(--border); overflow-y: auto; padding: 18px 18px 28px; }
+  main { position: relative; min-width: 0; }
+  #map { position: absolute; inset: 0; }
+  h1 { font-size: 20px; margin: 0 0 2px; }
+  .sub { color: var(--muted); margin: 0 0 16px; font-size: 13.5px; }
+  label { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 14px 0 5px; }
+  textarea, select {
+    width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 9px 10px; font: inherit;
+  }
+  textarea { resize: vertical; min-height: 84px; }
+  textarea:focus, select:focus, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip {
+    background: var(--chip); color: var(--text); border: 1px solid var(--border); border-radius: 999px;
+    padding: 4px 11px; font-size: 12.5px; cursor: pointer;
+  }
+  .chip:hover { border-color: var(--accent); }
+  .row { display: flex; gap: 10px; align-items: end; margin-top: 4px; }
+  .row > div { flex: 1; min-width: 0; }
+  button.go {
+    background: var(--accent); color: var(--accent-text); border: 0; border-radius: 8px;
+    padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer; min-width: 86px;
+  }
+  button.go:disabled { opacity: .55; cursor: progress; }
+  .card { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-top: 16px; background: var(--bg); }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 6px; }
+  #answer { white-space: pre-wrap; word-wrap: break-word; }
+  .error { color: var(--err); }
+  .notice { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 8px 10px; font-size: 13px; margin-top: 12px; }
+  details { border: 1px solid var(--border); border-radius: 8px; margin-top: 8px; background: var(--panel); }
+  summary { cursor: pointer; padding: 7px 10px; font-size: 13.5px; list-style-position: inside; }
+  summary .tn { font-family: ui-monospace, Consolas, monospace; font-weight: 600; }
+  summary .bad { color: var(--err); font-weight: 600; }
+  pre {
+    margin: 0; padding: 8px 10px; background: var(--code); font: 12px/1.45 ui-monospace, Consolas, monospace;
+    overflow-x: auto; white-space: pre-wrap; word-break: break-word; border-top: 1px solid var(--border);
+  }
+  .meta { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+  .legend { position: absolute; z-index: 500; right: 12px; bottom: 28px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-size: 12px; line-height: 1.7; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  @media (max-width: 800px) {
+    body { grid-template-columns: 1fr; grid-template-rows: 46vh auto; }
+    main { order: -1; }
+    aside { border-right: 0; border-top: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+<aside>
+  <h1>GeoAgent</h1>
+  <p class="sub">Ask a geospatial question. A local model answers by calling real tools on an MCP server.</p>
+
+  <label for="question">Question</label>
+  <textarea id="question" maxlength="600" placeholder="e.g. How far is Chennai from Bengaluru, in km?"></textarea>
+  <div class="chips" id="examples"></div>
+
+  <div class="row">
+    <div>
+      <label for="model">Model</label>
+      <select id="model"></select>
+    </div>
+    <button class="go" id="ask">Ask</button>
+  </div>
+  <div id="notice"></div>
+
+  <div id="result" hidden>
+    <div class="card"><h2>Answer</h2><div id="answer"></div></div>
+    <div class="card"><h2>Tool calls</h2><div id="calls"></div><div class="meta" id="meta"></div></div>
+  </div>
+</aside>
+
+<main>
+  <div id="map" role="application" aria-label="Map of the places and results"></div>
+  <div class="legend" aria-hidden="true">
+    <div><span class="dot" style="background:#7a8699"></span>Dataset place</div>
+    <div><span class="dot" style="background:#1b5fcf"></span>Looked up</div>
+    <div><span class="dot" style="background:#e5733a"></span>Result</div>
+  </div>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+
+  const EXAMPLES = [
+    ["Distance", "How far is Chennai from Bengaluru, in km?"],
+    ["Nearest airports", "List the three airports closest to Mysuru, nearest first, by IATA code."],
+    ["Within a radius", "Which airports are within 300 km of Hyderabad? Give IATA codes."],
+    ["Polygon", 'Is the point at latitude 5, longitude 5 inside this polygon? {"type": "Polygon", "coordinates": [[[0, 0], [0, 10], [10, 10], [10, 0], [0, 0]]]}'],
+    ["Unknown place", "How far is Gotham from Mumbai?"],
+  ];
+
+  // ---- map ---------------------------------------------------------------
+  const map = L.map("map").setView([20.5, 78.9], 5);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(map);
+  // The map fills a CSS grid cell whose size settles after first paint, so re-measure on resize.
+  if (window.ResizeObserver) new ResizeObserver(() => map.invalidateSize()).observe($("map"));
+  window.addEventListener("load", () => map.invalidateSize());
+  const baseLayer = L.layerGroup().addTo(map);
+  const resultLayer = L.layerGroup().addTo(map);
+
+  // Leaflet treats string tooltips/popups as HTML. Pass text through a DOM node instead.
+  const textNode = (text) => { const d = document.createElement("div"); d.textContent = text; return d; };
+
+  fetch("/api/places").then((r) => r.json()).then((places) => {
+    places.forEach((p) => {
+      L.circleMarker([p.lat, p.lon], { radius: 4, color: "#7a8699", weight: 1, fillOpacity: 0.7 })
+        .bindTooltip(textNode(p.name)).addTo(baseLayer);
+    });
+  }).catch(() => {});
+
+  const COLORS = { geocoded: "#1b5fcf", result: "#e5733a", inside: "#17703f", outside: "#b42318" };
+
+  function drawLayers(layers) {
+    resultLayer.clearLayers();
+    const bounds = [];
+    (layers.polygons || []).forEach((poly) => {
+      try {
+        const g = L.geoJSON(poly.geojson, { style: { color: poly.inside ? COLORS.inside : COLORS.outside, weight: 2, fillOpacity: 0.12 } });
+        g.addTo(resultLayer);
+        bounds.push(g.getBounds());
+      } catch (e) { /* ignore malformed geometry from the model */ }
+    });
+    (layers.circles || []).forEach((c) => {
+      const circle = L.circle([c.lat, c.lon], { radius: c.radius_km * 1000, color: COLORS.result, weight: 1.5, dashArray: "6 6", fillOpacity: 0.05 });
+      circle.bindTooltip(textNode(c.radius_km + " km radius")).addTo(resultLayer);
+      bounds.push(circle.getBounds());
+    });
+    (layers.lines || []).forEach((l) => {
+      const line = L.polyline([l.from, l.to], { color: COLORS.result, weight: 3 });
+      line.bindTooltip(textNode(l.label), { permanent: true, direction: "center" }).addTo(resultLayer);
+      bounds.push(line.getBounds());
+    });
+    (layers.points || []).forEach((p) => {
+      const m = L.circleMarker([p.lat, p.lon], { radius: 8, color: "#fff", weight: 2, fillColor: COLORS[p.kind] || COLORS.result, fillOpacity: 1 });
+      m.bindTooltip(textNode(p.label)).addTo(resultLayer);
+      bounds.push(L.latLngBounds([[p.lat, p.lon]]));
+    });
+    if (bounds.length) {
+      const all = bounds.reduce((acc, b) => acc.extend(b), L.latLngBounds(bounds[0]));
+      map.fitBounds(all.pad(0.25), { maxZoom: 9 });
+    } else {
+      map.setView([20.5, 78.9], 5); // nothing to show: go back to the dataset's region
+    }
+  }
+
+  // ---- form --------------------------------------------------------------
+  const q = $("question");
+  EXAMPLES.forEach(([label, text]) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chip"; b.textContent = label;
+    b.addEventListener("click", () => { q.value = text; q.focus(); });
+    $("examples").appendChild(b);
+  });
+
+  fetch("/api/models").then((r) => r.json()).then((info) => {
+    info.models.forEach((m) => { const o = document.createElement("option"); o.value = m; o.textContent = m; $("model").appendChild(o); });
+    if (!info.server_reachable) {
+      $("notice").innerHTML = "";
+      const n = document.createElement("div");
+      n.className = "notice";
+      n.textContent = "No model server found. Start Ollama (ollama serve) and reload, or set GEOAGENT_BASE_URL.";
+      $("notice").appendChild(n);
+    }
+  }).catch(() => {});
+
+  function showError(message) {
+    $("result").hidden = false;
+    const a = $("answer"); a.className = "error"; a.textContent = message;
+    $("calls").textContent = ""; $("meta").textContent = "";
+  }
+
+  function renderCalls(calls) {
+    const box = $("calls"); box.textContent = "";
+    if (!calls.length) { box.textContent = "The model answered without calling any tool."; return; }
+    calls.forEach((c, i) => {
+      const d = document.createElement("details");
+      const s = document.createElement("summary");
+      const name = document.createElement("span"); name.className = "tn"; name.textContent = (i + 1) + ". " + c.name;
+      s.appendChild(name);
+      if (String(c.result).startsWith("ERROR")) { const bad = document.createElement("span"); bad.className = "bad"; bad.textContent = "  failed"; s.appendChild(bad); }
+      d.appendChild(s);
+      const a = document.createElement("pre"); a.textContent = "arguments: " + JSON.stringify(c.arguments);
+      const r = document.createElement("pre"); r.textContent = c.result;
+      d.appendChild(a); d.appendChild(r); box.appendChild(d);
+    });
+  }
+
+  async function ask() {
+    const question = q.value.trim();
+    if (!question) { q.focus(); return; }
+    const btn = $("ask");
+    btn.disabled = true; btn.textContent = "Thinking…";
+    try {
+      const resp = await fetch("/api/ask", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question, model: $("model").value || null }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) { showError(data.error || "Something went wrong."); return; }
+      $("result").hidden = false;
+      const a = $("answer"); a.className = ""; a.textContent = data.answer || data.error || "(no answer)";
+      renderCalls(data.tool_calls || []);
+      $("meta").textContent = data.model + " · " + data.steps + " step" + (data.steps === 1 ? "" : "s");
+      drawLayers(data.layers || {});
+    } catch (e) {
+      showError("Could not reach the GeoAgent server.");
+    } finally {
+      btn.disabled = false; btn.textContent = "Ask";
+    }
+  }
+
+  $("ask").addEventListener("click", ask);
+  q.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) ask(); });
+})();
+</script>
+</body>
+</html>

@@ -60,13 +60,30 @@ python -m geoagent.agent -v "How far is Chennai from Bengaluru, in km?"
 
 `-v` prints every tool call. Pick another model with `--model llama3.1:8b`. To use a hosted provider instead, set `GEOAGENT_BASE_URL`, `GEOAGENT_MODEL` and `GEOAGENT_API_KEY`.
 
+## Web UI
+
+A small local page shows the answer, every tool call, and a map of what the agent found:
+
+```bash
+pip install -e ".[web]"
+geoagent-web          # then open http://127.0.0.1:8000
+```
+
+Pick a model, click an example or type a question. Lookups, distance lines, radius circles, polygons and results are drawn on the map; each tool call can be expanded to show its arguments and raw result.
+
+![Distance question: two lookups, a labelled line on the map, and the tool-call trail](docs/ui-distance.jpg)
+
+![Radius question: a 300 km circle around Hyderabad and the airports found inside it](docs/ui-radius.jpg)
+
+Notes: the map tiles come from OpenStreetMap, so the map needs an internet connection (the tools and model do not). The server binds to `127.0.0.1` only and has no login, because it can drive your model server; do not expose it to a network.
+
 ## Architecture
 
 ```
 User question
      |
      v
-  Agent (any tool-calling LLM)   src/geoagent/agent.py
+  Agent (any tool-calling LLM)   src/geoagent/agent.py   <- also used by the web UI (web.py)
      |  MCP (stdio)
      v
 GeoAgent MCP server  (src/geoagent/server.py)
@@ -135,6 +152,7 @@ Caveats: 18 cases is a small sample, so read the percentages as indicative only.
 - [x] Repeat each case 3 times to measure variance (results were identical across runs)
 - [ ] Try a stricter tool-call format or a stronger model for the "invents places" failures
 - [ ] Repeat each case several times to measure run-to-run variance
+- [x] Local web UI: answer, tool-call trail and a map
 - [ ] `elevation_profile` and a larger open dataset
 - [ ] Demo gif and tagged release
 
