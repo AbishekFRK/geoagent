@@ -2,7 +2,7 @@
 
 An [MCP](https://modelcontextprotocol.io) server that gives LLM agents geospatial tools, plus an eval suite that measures how reliably an agent uses them.
 
-> **Status: v0.1 skeleton.** The tools, tests and eval cases below are real and run. The agent loop and the full eval run are the next milestones. See the [roadmap](#roadmap).
+> **Status: v0.2 work in progress.** The tools, the agent loop and the eval cases are real and run. Scoring the agent against the eval cases is the next milestone. See the [roadmap](#roadmap).
 
 ## Why
 
@@ -49,13 +49,24 @@ Use it from Claude Desktop or Claude Code by adding it as a stdio server:
 }
 ```
 
+## Ask it a question (no API key needed)
+
+The bundled agent talks to any tool-calling model through the OpenAI-compatible chat API. By default it uses a local [Ollama](https://ollama.com) model, so it is free and private:
+
+```bash
+ollama pull qwen2.5:14b
+python -m geoagent.agent -v "How far is Chennai from Bengaluru, in km?"
+```
+
+`-v` prints every tool call. Pick another model with `--model llama3.1:8b`. To use a hosted provider instead, set `GEOAGENT_BASE_URL`, `GEOAGENT_MODEL` and `GEOAGENT_API_KEY`.
+
 ## Architecture
 
 ```
 User question
      |
      v
-  Agent (Claude, tool use)  <-- planned, src/geoagent/agent.py
+  Agent (any tool-calling LLM)   src/geoagent/agent.py
      |  MCP (stdio)
      v
 GeoAgent MCP server  (src/geoagent/server.py)
@@ -67,7 +78,7 @@ Pure geo functions   (src/geoagent/geo.py: pyproj, shapely)
 Bundled sample dataset (src/geoagent/data/sample_places.csv)
 ```
 
-The geospatial logic lives in plain functions in `geo.py` with no MCP dependency, so it is unit-tested directly. `server.py` only wraps them.
+The server uses the MCP Python SDK 2.x (`MCPServer`, called `FastMCP` in 1.x). The geospatial logic lives in plain functions in `geo.py` with no MCP dependency, so it is unit-tested directly. `server.py` only wraps them.
 
 ## Evals
 
@@ -82,8 +93,8 @@ Results table: _to be added after milestone 4._
 
 - [x] Repo, packaging, 5 tools, resource, prompt, unit tests
 - [x] First eval cases and schema checks
-- [ ] Agent loop (`agent.py`)
-- [ ] Eval runner and published results
+- [x] Agent loop (`agent.py`), model-agnostic, tested with a scripted fake model and a real local model
+- [ ] Eval runner and published results, compared across models (e.g. `qwen2.5:14b` vs `llama3.1:8b`)
 - [ ] `elevation_profile` and a larger open dataset
 - [ ] Demo gif and tagged release
 
