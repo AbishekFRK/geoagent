@@ -1,0 +1,19 @@
+name,code,kind,lat,lon
+Bengaluru,,city,12.9716,77.5946
+Chennai,,city,13.0827,80.2707
+Hyderabad,,city,17.3850,78.4867
+Mumbai,,city,19.0760,72.8777
+Delhi,,city,28.6139,77.2090
+Mysuru,,city,12.2958,76.6394
+Kempegowda International Airport (Bengaluru),BLR,airport,13.1979,77.7063
+Chennai International Airport,MAA,airport,12.9900,80.1693
+Rajiv Gandhi International Airport (Hyderabad),HYD,airport,17.2403,78.4294
+Chhatrapati Shivaji Maharaj International Airport (Mumbai),BOM,airport,19.0896,72.8656
+Indira Gandhi International Airport (Delhi),DEL,airport,28.5562,77.1000
+Cochin International Airport,COK,airport,10.1520,76.4019
+Coimbatore International Airport,CJB,airport,11.0300,77.0434
+Mangaluru International Airport,IXE,airport,12.9613,74.8901
+Goa International Airport (Dabolim),GOI,airport,15.3808,73.8314
+Pune Airport,PNQ,airport,18.5822,73.9197
+Sardar Vallabhbhai Patel International Airport (Ahmedabad),AMD,airport,23.0772,72.6347
+Netaji Subhas Chandra Bose International Airport (Kolkata),CCU,airport,22.6547,88.4467

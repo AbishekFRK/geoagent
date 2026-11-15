@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "geoagent"
+version = "0.1.0"
+description = "An MCP server that gives LLM agents geospatial tools, plus an eval suite that measures how well they use them."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Abishek F" }]
+keywords = ["mcp", "geospatial", "gis", "agents", "llm", "evals"]
+dependencies = [
+    "mcp>=2.0",
+    "shapely>=2.0",
+    "pyproj>=3.6",
+]
+
+[project.optional-dependencies]
+agent = ["anthropic>=0.40"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+geoagent-server = "geoagent.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/geoagent"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
