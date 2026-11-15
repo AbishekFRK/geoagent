@@ -93,16 +93,16 @@ Run them yourself (needs Ollama with the models pulled):
 python evals/run_evals.py --models qwen2.5:14b llama3.1:8b --markdown evals/RESULTS.md
 ```
 
-Model output varies from run to run, so add `--repeats 3` (or more) to run every case several times. The report then shows each model's mean score with the lowest and highest run, and how many runs passed each case.
+To check how stable a result is, add `--repeats 3` (or more) to run every case several times. The report then shows each model's mean score with the lowest and highest run, and how many runs passed each case.
 
-### Results (18 cases, local models via Ollama, temperature 0, tightened prompt)
+### Results (18 cases x 3 runs, local models via Ollama, temperature 0, tightened prompt)
 
 | Model | Tool selection | Answer accuracy | Mean time per case |
 |---|---|---|---|
-| `qwen2.5:14b` | 94% | 100% | 12.7 s |
-| `llama3.1:8b` | 83% | 67% | 16.8 s |
+| `qwen2.5:14b` | 94% | 100% | 9.3 s |
+| `llama3.1:8b` | 83% | 67% | 6.5 s |
 
-Per-case table: [evals/RESULTS.md](evals/RESULTS.md).
+**The three runs were identical.** Every case gave the same pass or fail in all three runs for both models, so the min and max of each score equal the mean. With a fixed model, prompt and temperature 0, these results are stable. That also means the failures below are systematic, not bad luck. Per-case pass counts: [evals/RESULTS.md](evals/RESULTS.md).
 
 ### Did tightening the prompt help?
 
@@ -122,7 +122,7 @@ Reading this honestly: Qwen was already perfect on the held-out cases, so there 
 - **Llama 3.1 8B sent the polygon as a JSON string**, which the tool rejected. The evals exposed this; the tool now accepts either form. After the prompt change Llama's polygon answers went wrong again for a different reason (it emitted malformed tool calls as text), so small-model reliability here is not just a prompt problem.
 - **Llama 3.1 8B often skips `geocode`**, answering nearest/radius questions correctly from remembered coordinates. That counts as a tool-selection miss even when the answer is right.
 
-Caveats: 18 cases and one run per model is a small sample, and results vary between runs even at temperature 0, so read the percentages as indicative only. Answers are scored with deterministic rules (no LLM judge), documented at the top of [evals/run_evals.py](evals/run_evals.py). Boolean answers only count if `point_in_polygon` actually ran, a rule added after a first run showed an error message being misread as a "no".
+Caveats: 18 cases is a small sample, so read the percentages as indicative only. The before/after tables above compare single runs from earlier in development; during that work Qwen passed the Mysuru-Bengaluru case once and failed it in the next two runs with the same prompt, which I could not explain (the final 3-run measurement shows no such variation, so it may have been an Ollama state effect). Treat any one-off difference of a single case with suspicion. Answers are scored with deterministic rules (no LLM judge), documented at the top of [evals/run_evals.py](evals/run_evals.py). Boolean answers only count if `point_in_polygon` actually ran, a rule added after a first run showed an error message being misread as a "no".
 
 ## Roadmap
 
@@ -132,7 +132,7 @@ Caveats: 18 cases and one run per model is a small sample, and results vary betw
 - [x] Eval runner and published results, compared across models (`qwen2.5:14b` vs `llama3.1:8b`)
 - [x] Fix what the evals found (the polygon argument now accepts a JSON string) and re-run
 - [x] Tighten the prompt and tool descriptions, checked on held-out cases
-- [ ] Repeat each case several times (e.g. 5 runs) to report variance, since single runs are noisy
+- [x] Repeat each case 3 times to measure variance (results were identical across runs)
 - [ ] Try a stricter tool-call format or a stronger model for the "invents places" failures
 - [ ] Repeat each case several times to measure run-to-run variance
 - [ ] `elevation_profile` and a larger open dataset
