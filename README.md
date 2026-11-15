@@ -25,7 +25,7 @@ Planned for v0.2: `elevation_profile` from an open DEM, and a larger dataset (Na
 ## Quick start
 
 ```bash
-git clone <this repo>
+git clone https://github.com/AbishekFRK/geoagent.git
 cd geoagent
 python -m venv .venv
 .venv\Scripts\activate          # Windows. On macOS/Linux: source .venv/bin/activate
