@@ -67,7 +67,9 @@
   .legend { position: absolute; z-index: 500; right: 12px; bottom: 28px; background: var(--panel); color: var(--text);
     border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-size: 12px; line-height: 1.7; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
   @media (max-width: 800px) {
+    .legend { font-size: 11px; padding: 5px 8px; line-height: 1.45; right: 8px; bottom: 24px; }
     body { grid-template-columns: 1fr; grid-template-rows: 46vh auto; }
     main { order: -1; }
     aside { border-right: 0; border-top: 1px solid var(--border); }
@@ -81,6 +83,7 @@
 
   <label for="question">Question</label>
   <textarea id="question" maxlength="600" placeholder="e.g. How far is Chennai from Bengaluru, in km?"></textarea>
+  <div class="hint">Press Ctrl+Enter to ask.</div>
   <div class="chips" id="examples"></div>
 
   <div class="row">
@@ -93,20 +96,14 @@
   <div id="notice"></div>
 
   <div id="result" hidden>
-    <div class="card"><h2>Answer</h2><div id="answer"></div></div>
+    <div class="card"><h2>Answer</h2><div id="answer" aria-live="polite"></div></div>
     <div class="card"><h2>Tool calls</h2><div id="calls"></div><div class="meta" id="meta"></div></div>
   </div>
 </aside>
 
 <main>
   <div id="map" role="application" aria-label="Map of the places and results"></div>
-  <div class="legend" aria-hidden="true">
-    <div><span class="dot" style="background:#7a8699"></span>Dataset place</div>
-    <div><span class="dot" style="background:#1b5fcf"></span>Looked up</div>
-    <div><span class="dot" style="background:#e5733a"></span>Result</div>
-    <div><span class="dot" style="background:#17703f"></span>Point inside polygon</div>
-    <div><span class="dot" style="background:#b42318"></span>Point outside polygon</div>
-  </div>
+  <div class="legend" id="legend" aria-hidden="true"></div>
 </main>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -146,9 +143,28 @@
   }).catch(() => {});
 
   const COLORS = { geocoded: "#1b5fcf", result: "#e5733a", inside: "#17703f", outside: "#b42318" };
+  const KIND_LABELS = { geocoded: "Looked up", result: "Result", inside: "Point inside polygon", outside: "Point outside polygon" };
+
+  // Show only the legend entries that apply to what is on the map right now.
+  function updateLegend(layers) {
+    const legend = $("legend");
+    legend.textContent = "";
+    const entries = [["#7a8699", "Dataset place"]];
+    const kinds = new Set((layers.points || []).map((p) => p.kind));
+    Object.keys(KIND_LABELS).forEach((k) => { if (kinds.has(k)) entries.push([COLORS[k], KIND_LABELS[k]]); });
+    entries.forEach(([color, label]) => {
+      const row = document.createElement("div");
+      const dot = document.createElement("span");
+      dot.className = "dot"; dot.style.background = color;
+      row.appendChild(dot); row.appendChild(document.createTextNode(label));
+      legend.appendChild(row);
+    });
+  }
+  updateLegend({});
 
   function drawLayers(layers) {
     resultLayer.clearLayers();
+    updateLegend(layers);
     const bounds = [];
     (layers.polygons || []).forEach((poly) => {
       try {
@@ -227,6 +243,8 @@
     if (!question) { q.focus(); return; }
     const btn = $("ask");
     btn.disabled = true; btn.textContent = "Thinking…";
+    const started = Date.now();
+    const timer = setInterval(() => { btn.textContent = "Thinking… " + Math.round((Date.now() - started) / 1000) + "s"; }, 1000);
     try {
       const resp = await fetch("/api/ask", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -239,9 +257,14 @@
       renderCalls(data.tool_calls || []);
       $("meta").textContent = data.model + " · " + data.steps + " step" + (data.steps === 1 ? "" : "s");
       drawLayers(data.layers || {});
+      // On a phone the answer sits below the map; bring it into view.
+      if (window.matchMedia("(max-width: 800px)").matches) {
+        $("result").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     } catch (e) {
       showError("Could not reach the GeoAgent server.");
     } finally {
+      clearInterval(timer);
       btn.disabled = false; btn.textContent = "Ask";
     }
   }
