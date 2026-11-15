@@ -89,6 +89,33 @@ def test_boolean_answer_needs_a_successful_tool_run():
     assert ev.score_case(CASES["pip-002"], no_tool)["answer_ok"] is False
 
 
+def _row(case_id, run, tools_ok, answer_ok, seconds=1.0):
+    return {"id": case_id, "run": run, "tools_ok": tools_ok, "answer_ok": answer_ok, "seconds": seconds}
+
+
+def test_summarize_repeats_reports_mean_min_and_max_across_runs():
+    rows = [
+        _row("a", 1, True, True), _row("b", 1, True, False),    # run 1: tools 100%, answers 50%
+        _row("a", 2, False, True), _row("b", 2, False, True),   # run 2: tools 0%, answers 100%
+    ]
+    s = ev.summarize_repeats(rows)
+    assert s["runs"] == 2 and s["cases"] == 2
+    assert s["tool_selection"] == {"mean": 0.5, "min": 0.0, "max": 1.0}
+    assert s["answer_accuracy"] == {"mean": 0.75, "min": 0.5, "max": 1.0}
+
+
+def test_repeat_report_shows_pass_counts_per_case():
+    rows = [_row("a", 1, True, True), _row("a", 2, True, False), _row("a", 3, False, False)]
+    md = ev.markdown_report({"m1": rows})
+    assert "3 runs per model" in md
+    assert "| a | 2/3 / 1/3 |" in md
+
+
+def test_single_run_rows_without_a_run_field_still_work():
+    rows = [{"id": "a", "tools_ok": True, "answer_ok": True, "seconds": 1.0}]
+    assert ev.summarize_repeats(rows)["runs"] == 1
+
+
 def test_markdown_report_has_a_row_per_model_and_case():
     rows = [ev.score_case(CASES["dist-001"], {"answer": "290.5 km", "tool_calls": [{"name": "geocode"}, {"name": "distance_bearing"}], "seconds": 1.0})]
     md = ev.markdown_report({"m1": rows})

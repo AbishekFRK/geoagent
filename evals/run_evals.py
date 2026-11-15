@@ -3,6 +3,7 @@
     python evals/run_evals.py --validate                       # check the case file only
     python evals/run_evals.py --models qwen2.5:14b llama3.1:8b # run every case on each model
     python evals/run_evals.py --models qwen2.5:14b --cases dist-001 nearest-002
+    python evals/run_evals.py --models qwen2.5:14b --repeats 3  # measure run-to-run variance
 
 Two scores per case:
   * tool selection: every tool in `expected_tools` was called (extra calls are allowed)
@@ -164,28 +165,87 @@ def summarize(rows: list[dict]) -> dict:
     }
 
 
+def _by_run(rows: list[dict]) -> list[list[dict]]:
+    runs: dict[int, list[dict]] = {}
+    for r in rows:
+        runs.setdefault(r.get("run", 1), []).append(r)
+    return [runs[k] for k in sorted(runs)]
+
+
+def summarize_repeats(rows: list[dict]) -> dict:
+    """Summarise a model's rows across repeated runs: mean, min and max of each run's score."""
+    per_run = [summarize(group) for group in _by_run(rows)]
+
+    def stat(key: str) -> dict:
+        vals = [s[key] for s in per_run]
+        return {"mean": round(sum(vals) / len(vals), 3), "min": min(vals), "max": max(vals)}
+
+    return {
+        "runs": len(per_run),
+        "cases": per_run[0]["cases"],
+        "tool_selection": stat("tool_selection"),
+        "answer_accuracy": stat("answer_accuracy"),
+        "mean_seconds": round(sum(s["mean_seconds"] for s in per_run) / len(per_run), 1),
+    }
+
+
 # ----------------------------------------------------------------------------- running
 
 
-def run_model(model: str, cases: list[dict]) -> list[dict]:
+def run_model(model: str, cases: list[dict], repeats: int = 1) -> list[dict]:
     from geoagent import agent
 
     rows = []
-    for case in cases:
-        start = time.perf_counter()
-        try:
-            result = agent.ask(case["question"], model=model)
-        except Exception as exc:  # an unreachable model or crashed run counts as a failed case
-            result = {"answer": "", "tool_calls": [], "steps": None, "error": f"{type(exc).__name__}: {exc}"}
-        result["seconds"] = round(time.perf_counter() - start, 1)
-        row = score_case(case, result)
-        rows.append(row)
-        mark = lambda ok: "PASS" if ok else "FAIL"  # noqa: E731
-        print(f"  {case['id']:<13} tools {mark(row['tools_ok'])}  answer {mark(row['answer_ok'])}  {row['seconds']}s", flush=True)
+    for run in range(1, repeats + 1):
+        for case in cases:
+            start = time.perf_counter()
+            try:
+                result = agent.ask(case["question"], model=model)
+            except Exception as exc:  # an unreachable model or crashed run counts as a failed case
+                result = {"answer": "", "tool_calls": [], "steps": None, "error": f"{type(exc).__name__}: {exc}"}
+            result["seconds"] = round(time.perf_counter() - start, 1)
+            row = score_case(case, result)
+            row["run"] = run
+            rows.append(row)
+            mark = lambda ok: "PASS" if ok else "FAIL"  # noqa: E731
+            label = f"[run {run}/{repeats}] " if repeats > 1 else ""
+            print(
+                f"  {label}{case['id']:<13} tools {mark(row['tools_ok'])}  answer {mark(row['answer_ok'])}  {row['seconds']}s",
+                flush=True,
+            )
     return rows
 
 
 def markdown_report(results: dict[str, list[dict]]) -> str:
+    n_runs = max(len(_by_run(rows)) for rows in results.values())
+    if n_runs == 1:
+        return _single_run_report(results)
+
+    pct = lambda s: f"{s['mean']:.0%} ({s['min']:.0%}-{s['max']:.0%})"  # noqa: E731
+    first = next(iter(results.values()))
+    lines = [
+        f"{n_runs} runs per model. Scores are the mean across runs, with the lowest and highest run in brackets.",
+        "",
+        "| Model | Cases per run | Tool selection | Answer accuracy | Mean time per case |",
+        "|---|---|---|---|---|",
+    ]
+    for model, rows in results.items():
+        s = summarize_repeats(rows)
+        lines.append(f"| `{model}` | {s['cases']} | {pct(s['tool_selection'])} | {pct(s['answer_accuracy'])} | {s['mean_seconds']} s |")
+
+    ids = list(dict.fromkeys(r["id"] for r in first))
+    lines += ["", f"Per case: runs passed out of {n_runs} (tools / answer).", ""]
+    lines += ["| Case | " + " | ".join(f"`{m}`" for m in results) + " |", "|---|" + "---|" * len(results)]
+    for cid in ids:
+        cells = []
+        for rows in results.values():
+            mine = [r for r in rows if r["id"] == cid]
+            cells.append(f"{sum(r['tools_ok'] for r in mine)}/{len(mine)} / {sum(r['answer_ok'] for r in mine)}/{len(mine)}")
+        lines.append(f"| {cid} | " + " | ".join(cells) + " |")
+    return "\n".join(lines) + "\n"
+
+
+def _single_run_report(results: dict[str, list[dict]]) -> str:
     lines = ["| Model | Cases | Tool selection | Answer accuracy | Mean time per case |", "|---|---|---|---|---|"]
     for model, rows in results.items():
         s = summarize(rows)
@@ -209,6 +269,7 @@ def main() -> int:
     parser.add_argument("--validate", action="store_true", help="only check the case file")
     parser.add_argument("--models", nargs="+", help="model names served by your OpenAI-compatible endpoint")
     parser.add_argument("--cases", nargs="+", help="run only these case ids")
+    parser.add_argument("--repeats", type=int, default=1, help="run every case this many times to measure variance")
     parser.add_argument("--markdown", type=Path, help="also write the results tables to this file")
     parser.add_argument("--report", type=Path, help="rebuild the tables from a saved results JSON, without running models")
     args = parser.parse_args()
@@ -243,12 +304,13 @@ def main() -> int:
     results: dict[str, list[dict]] = {}
     for model in args.models:
         print(f"\n{model}", flush=True)
-        results[model] = run_model(model, cases)
+        results[model] = run_model(model, cases, args.repeats)
 
     RESULTS_DIR.mkdir(exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out = RESULTS_DIR / f"run-{stamp}.json"
-    out.write_text(json.dumps({"summary": {m: summarize(r) for m, r in results.items()}, "runs": results}, indent=2), encoding="utf-8")
+    summary = {m: summarize_repeats(r) for m, r in results.items()}
+    out.write_text(json.dumps({"summary": summary, "runs": results}, indent=2), encoding="utf-8")
 
     report = markdown_report(results)
     if args.markdown:

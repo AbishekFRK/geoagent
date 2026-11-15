@@ -93,6 +93,8 @@ Run them yourself (needs Ollama with the models pulled):
 python evals/run_evals.py --models qwen2.5:14b llama3.1:8b --markdown evals/RESULTS.md
 ```
 
+Model output varies from run to run, so add `--repeats 3` (or more) to run every case several times. The report then shows each model's mean score with the lowest and highest run, and how many runs passed each case.
+
 ### Results (18 cases, local models via Ollama, temperature 0, tightened prompt)
 
 | Model | Tool selection | Answer accuracy | Mean time per case |
