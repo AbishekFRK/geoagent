@@ -18,7 +18,9 @@ mcp = MCPServer("GeoAgent")
 def geocode(place: str) -> dict:
     """Look up a place by name or airport code (e.g. "Bengaluru", "BLR") in the bundled dataset.
 
-    Returns name, kind, lat and lon, or an error message if nothing matches.
+    Returns the place's name, kind, lat and lon, or an error if nothing matches. It returns
+    coordinates only, never distances: to get a distance or bearing, call distance_bearing
+    next. Always call this first for any place name instead of using remembered coordinates.
     """
     found = geo.find_place(place)
     if found is None:
@@ -28,19 +30,29 @@ def geocode(place: str) -> dict:
 
 @mcp.tool()
 def distance_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> dict:
-    """Geodesic distance in km and bearings in degrees from point 1 to point 2 (WGS84)."""
+    """Geodesic distance in km and bearings in degrees from point 1 to point 2 (WGS84).
+
+    Use this for every distance or bearing question. Never estimate a distance from memory.
+    Get the coordinates from geocode first.
+    """
     return geo.distance_bearing(lat1, lon1, lat2, lon2)
 
 
 @mcp.tool()
 def features_within(lat: float, lon: float, radius_km: float, kind: str | None = None) -> list[dict]:
-    """List places within radius_km of a point, nearest first. kind can be "city" or "airport"."""
+    """List all places within radius_km of a point, nearest first. kind can be "city" or "airport".
+
+    Use for "what is within X km of ..." questions. Get the point from geocode first.
+    """
     return geo.features_within(lat, lon, radius_km, kind)
 
 
 @mcp.tool()
 def nearest_features(lat: float, lon: float, n: int = 3, kind: str | None = None) -> list[dict]:
-    """The n nearest places to a point. kind can be "city" or "airport"."""
+    """The n nearest places to a point. kind can be "city" or "airport".
+
+    Use for "closest" or "nearest" questions. Get the point from geocode first.
+    """
     return geo.nearest_features(lat, lon, n, kind)
 
 
@@ -66,10 +78,17 @@ def catalog() -> str:
 def geo_question(question: str) -> str:
     """A system-style prompt that tells the model how to use the GeoAgent tools."""
     return (
-        "You are a careful geospatial assistant. Use the GeoAgent tools for every "
-        "coordinate, distance or proximity fact; never estimate them from memory. "
-        "Geocode place names first, state distances in km, and if the question is "
-        "ambiguous or the place is not in the dataset, say so and ask instead of guessing.\n\n"
+        "You are a careful geospatial assistant. Follow these rules.\n"
+        "1. Turn every place name into coordinates with the geocode tool. Never use "
+        "coordinates or distances from memory.\n"
+        "2. geocode returns coordinates only. For any distance or bearing, you must then "
+        "call distance_bearing.\n"
+        "3. Use nearest_features for 'closest' questions and features_within for "
+        "'within X km' questions.\n"
+        "4. If the question does not name the specific places it needs, or geocode cannot "
+        "find a place, say so and ask the user. Never pick places yourself and never invent "
+        "coordinates.\n"
+        "5. Report the tool's numbers in km and keep the answer short.\n\n"
         f"Question: {question}"
     )
 

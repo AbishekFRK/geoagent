@@ -40,3 +40,12 @@ def test_catalog_resource_lists_places():
 def test_prompt_is_registered():
     prompts = asyncio.run(mcp.list_prompts())
     assert any(p.name == "geo_question" for p in prompts)
+
+
+def test_prompt_states_the_tool_rules_and_includes_the_question():
+    from geoagent.server import geo_question
+
+    text = geo_question("How far is X from Y?")
+    assert "How far is X from Y?" in text
+    for tool in ("geocode", "distance_bearing", "nearest_features", "features_within"):
+        assert tool in text

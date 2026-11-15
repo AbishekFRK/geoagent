@@ -93,23 +93,34 @@ Run them yourself (needs Ollama with the models pulled):
 python evals/run_evals.py --models qwen2.5:14b llama3.1:8b --markdown evals/RESULTS.md
 ```
 
-### Results (11 cases, local models via Ollama, temperature 0)
+### Results (18 cases, local models via Ollama, temperature 0, tightened prompt)
 
 | Model | Tool selection | Answer accuracy | Mean time per case |
 |---|---|---|---|
-| `qwen2.5:14b` | 91% | 91% | 11.8 s |
-| `llama3.1:8b` | 73% | 91% | 7.7 s |
+| `qwen2.5:14b` | 94% | 100% | 12.7 s |
+| `llama3.1:8b` | 83% | 67% | 16.8 s |
 
 Per-case table: [evals/RESULTS.md](evals/RESULTS.md).
 
-What the evals found:
+### Did tightening the prompt help?
 
-- **Qwen 2.5 14B sometimes skips the distance tool.** For "Mysuru to Bengaluru" it geocoded both places, then answered from memory ("149 km", then "152 km" on the next run) instead of calling `distance_bearing`. The true distance is 127.9 km. It got this case right in one earlier run, so temperature 0 is not fully deterministic here, but it failed it in the last two runs.
-- **Llama 3.1 8B invents places.** Asked for "the distance between the two airports" with no airports named, it made up two airports and returned a distance instead of asking which ones were meant (JFK and LAX in one run, Bengaluru and Delhi in another).
-- **Llama 3.1 8B sent the polygon as a JSON string**, which the tool rejected, so it failed both polygon cases. The evals exposed this; the tool now accepts either form, and Llama passes both cases after the fix (answer accuracy 73% to 91%).
-- **Llama 3.1 8B often skipped `geocode`.** It answered the nearest/radius questions correctly but used remembered coordinates, which the prompt tells it not to do. That counts as a tool-selection miss even though the answer was right.
+After the first results I tightened the system prompt and the tool descriptions (the geocode tool now says it returns coordinates only; the prompt has numbered rules). Because I tuned against the first 11 cases, those cases cannot show whether the change generalises. So I wrote 7 **held-out** cases (`"split": "holdout"` in `cases.jsonl`) before tuning and ran the old prompt on them as a baseline.
 
-Caveats: 11 cases and one run per model is a small sample, so read the percentages as indicative only. Answers are scored with deterministic rules (no LLM judge), documented at the top of [evals/run_evals.py](evals/run_evals.py). Boolean answers only count if `point_in_polygon` actually ran, a rule added after a first run showed an error message being misread as a "no".
+| Held-out cases (7) | Tool selection, before | after | Answer accuracy, before | after |
+|---|---|---|---|---|
+| `qwen2.5:14b` | 100% | 100% | 100% | 100% |
+| `llama3.1:8b` | 71% | 86% | 43% | 57% |
+
+Reading this honestly: Qwen was already perfect on the held-out cases, so there was nothing to gain. Its one new tool-selection miss, on the Atlantis case in the main set, was saying the place was not in the dataset without calling `geocode` to check. Llama improved a little on the held-out cases, but 7 cases is too few to call that significant, and across all 18 cases its answer accuracy did not improve: it regressed on the polygon cases and kept inventing places. On the original 11 cases, Qwen's recurring "answers distance from memory" miss is gone.
+
+### What the evals found
+
+- **Qwen 2.5 14B used to skip the distance tool.** For "Mysuru to Bengaluru" it geocoded both places, then answered from memory ("149 km", "152 km") instead of calling `distance_bearing` (true: 127.9 km). It failed this in two runs, passed in an earlier run, and passes it after the prompt change.
+- **Llama 3.1 8B invents places and answers.** For ambiguous or unknown places ("the two airports", "Gotham") it still makes up places or coordinates and reports a distance instead of asking, even with explicit rules against it.
+- **Llama 3.1 8B sent the polygon as a JSON string**, which the tool rejected. The evals exposed this; the tool now accepts either form. After the prompt change Llama's polygon answers went wrong again for a different reason (it emitted malformed tool calls as text), so small-model reliability here is not just a prompt problem.
+- **Llama 3.1 8B often skips `geocode`**, answering nearest/radius questions correctly from remembered coordinates. That counts as a tool-selection miss even when the answer is right.
+
+Caveats: 18 cases and one run per model is a small sample, and results vary between runs even at temperature 0, so read the percentages as indicative only. Answers are scored with deterministic rules (no LLM judge), documented at the top of [evals/run_evals.py](evals/run_evals.py). Boolean answers only count if `point_in_polygon` actually ran, a rule added after a first run showed an error message being misread as a "no".
 
 ## Roadmap
 
@@ -118,7 +129,9 @@ Caveats: 11 cases and one run per model is a small sample, so read the percentag
 - [x] Agent loop (`agent.py`), model-agnostic, tested with a scripted fake model and a real local model
 - [x] Eval runner and published results, compared across models (`qwen2.5:14b` vs `llama3.1:8b`)
 - [x] Fix what the evals found (the polygon argument now accepts a JSON string) and re-run
-- [ ] Reduce "answers from memory" misses, for example by tightening tool descriptions or the prompt
+- [x] Tighten the prompt and tool descriptions, checked on held-out cases
+- [ ] Repeat each case several times (e.g. 5 runs) to report variance, since single runs are noisy
+- [ ] Try a stricter tool-call format or a stronger model for the "invents places" failures
 - [ ] Repeat each case several times to measure run-to-run variance
 - [ ] `elevation_profile` and a larger open dataset
 - [ ] Demo gif and tagged release
