@@ -8,6 +8,7 @@ latitude first. GeoJSON inputs follow the GeoJSON convention (longitude first).
 from __future__ import annotations
 
 import csv
+import json
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib import resources
@@ -107,9 +108,18 @@ def nearest_features(lat: float, lon: float, n: int = 3, kind: str | None = None
     return _with_distance(lat, lon, places)[:n]
 
 
-def point_in_polygon(lat: float, lon: float, polygon_geojson: dict) -> bool:
-    """True if the point lies inside (or on the edge of) a GeoJSON Polygon/MultiPolygon."""
+def point_in_polygon(lat: float, lon: float, polygon_geojson: dict | str) -> bool:
+    """True if the point lies inside (or on the edge of) a GeoJSON Polygon/MultiPolygon.
+
+    The polygon may be a GeoJSON object or a JSON string of one. Some models send the
+    string form, and rejecting it only makes the agent fail for a trivial reason.
+    """
     _check_coord(lat, lon)
+    if isinstance(polygon_geojson, str):
+        try:
+            polygon_geojson = json.loads(polygon_geojson)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"polygon_geojson is not valid JSON: {exc}") from exc
     geom = shape(polygon_geojson)
     if geom.geom_type not in ("Polygon", "MultiPolygon"):
         raise ValueError(f"expected a Polygon or MultiPolygon, got {geom.geom_type}")

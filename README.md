@@ -97,16 +97,16 @@ python evals/run_evals.py --models qwen2.5:14b llama3.1:8b --markdown evals/RESU
 
 | Model | Tool selection | Answer accuracy | Mean time per case |
 |---|---|---|---|
-| `qwen2.5:14b` | 91% | 91% | 12.1 s |
-| `llama3.1:8b` | 73% | 73% | 8.7 s |
+| `qwen2.5:14b` | 91% | 91% | 11.8 s |
+| `llama3.1:8b` | 73% | 91% | 7.7 s |
 
 Per-case table: [evals/RESULTS.md](evals/RESULTS.md).
 
 What the evals found:
 
-- **Qwen 2.5 14B skipped the tool once.** For "Mysuru to Bengaluru" it geocoded both places, then answered "149 km" from memory instead of calling `distance_bearing`. The true distance is 127.9 km. An earlier run of the same suite got this case right, so temperature 0 is not fully deterministic here (it was 11/11 on that earlier run).
-- **Llama 3.1 8B invented places.** Asked for "the distance between the two airports" with no airports named, it made up JFK and LAX and returned 3983 km instead of asking which airports were meant.
-- **Llama 3.1 8B passed the polygon as a string**, not an object, so `point_in_polygon` rejected the call and it failed both polygon cases.
+- **Qwen 2.5 14B sometimes skips the distance tool.** For "Mysuru to Bengaluru" it geocoded both places, then answered from memory ("149 km", then "152 km" on the next run) instead of calling `distance_bearing`. The true distance is 127.9 km. It got this case right in one earlier run, so temperature 0 is not fully deterministic here, but it failed it in the last two runs.
+- **Llama 3.1 8B invents places.** Asked for "the distance between the two airports" with no airports named, it made up two airports and returned a distance instead of asking which ones were meant (JFK and LAX in one run, Bengaluru and Delhi in another).
+- **Llama 3.1 8B sent the polygon as a JSON string**, which the tool rejected, so it failed both polygon cases. The evals exposed this; the tool now accepts either form, and Llama passes both cases after the fix (answer accuracy 73% to 91%).
 - **Llama 3.1 8B often skipped `geocode`.** It answered the nearest/radius questions correctly but used remembered coordinates, which the prompt tells it not to do. That counts as a tool-selection miss even though the answer was right.
 
 Caveats: 11 cases and one run per model is a small sample, so read the percentages as indicative only. Answers are scored with deterministic rules (no LLM judge), documented at the top of [evals/run_evals.py](evals/run_evals.py). Boolean answers only count if `point_in_polygon` actually ran, a rule added after a first run showed an error message being misread as a "no".
@@ -117,7 +117,8 @@ Caveats: 11 cases and one run per model is a small sample, so read the percentag
 - [x] First eval cases and schema checks
 - [x] Agent loop (`agent.py`), model-agnostic, tested with a scripted fake model and a real local model
 - [x] Eval runner and published results, compared across models (`qwen2.5:14b` vs `llama3.1:8b`)
-- [ ] Fix what the evals found (e.g. accept a JSON string for the polygon argument) and re-run
+- [x] Fix what the evals found (the polygon argument now accepts a JSON string) and re-run
+- [ ] Reduce "answers from memory" misses, for example by tightening tool descriptions or the prompt
 - [ ] Repeat each case several times to measure run-to-run variance
 - [ ] `elevation_profile` and a larger open dataset
 - [ ] Demo gif and tagged release

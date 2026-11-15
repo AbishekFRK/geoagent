@@ -45,8 +45,11 @@ def nearest_features(lat: float, lon: float, n: int = 3, kind: str | None = None
 
 
 @mcp.tool()
-def point_in_polygon(lat: float, lon: float, polygon_geojson: dict) -> bool:
-    """True if the point is inside a GeoJSON Polygon or MultiPolygon (GeoJSON is lon, lat order)."""
+def point_in_polygon(lat: float, lon: float, polygon_geojson: dict | str) -> bool:
+    """True if the point is inside a GeoJSON Polygon or MultiPolygon (GeoJSON is lon, lat order).
+
+    polygon_geojson is the GeoJSON object itself or a JSON string of it.
+    """
     return geo.point_in_polygon(lat, lon, polygon_geojson)
 
 

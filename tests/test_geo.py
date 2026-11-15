@@ -67,5 +67,12 @@ def test_point_in_polygon():
     }
     assert geo.point_in_polygon(5, 5, square) is True
     assert geo.point_in_polygon(15, 5, square) is False
+    # Models sometimes send the polygon as a JSON string; that must work too.
+    import json
+
+    assert geo.point_in_polygon(5, 5, json.dumps(square)) is True
+    assert geo.point_in_polygon(15, 5, json.dumps(square)) is False
+    with pytest.raises(ValueError, match="not valid JSON"):
+        geo.point_in_polygon(5, 5, "{not json")
     with pytest.raises(ValueError):
         geo.point_in_polygon(1, 1, {"type": "Point", "coordinates": [1, 1]})

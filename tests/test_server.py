@@ -19,6 +19,16 @@ def test_tools_are_registered():
     assert all(t.description for t in tools)
 
 
+def test_point_in_polygon_tool_accepts_object_and_json_string():
+    square = {"type": "Polygon", "coordinates": [[[0, 0], [0, 10], [10, 10], [10, 0], [0, 0]]]}
+    for polygon in (square, json.dumps(square)):
+        result = asyncio.run(
+            mcp.call_tool("point_in_polygon", {"lat": 5, "lon": 5, "polygon_geojson": polygon})
+        )
+        assert not result.is_error, polygon
+        assert "true" in str(result.content[0].text).lower()
+
+
 def test_catalog_resource_lists_places():
     resources = asyncio.run(mcp.list_resources())
     assert any(str(r.uri) == "geoagent://catalog" for r in resources)

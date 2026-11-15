@@ -1,7 +1,7 @@
 | Model | Cases | Tool selection | Answer accuracy | Mean time per case |
 |---|---|---|---|---|
-| `qwen2.5:14b` | 11 | 91% | 91% | 12.1 s |
-| `llama3.1:8b` | 11 | 73% | 73% | 8.7 s |
+| `qwen2.5:14b` | 11 | 91% | 91% | 11.8 s |
+| `llama3.1:8b` | 11 | 73% | 91% | 7.7 s |
 
 Per case (tools / answer):
 
@@ -14,7 +14,7 @@ Per case (tools / answer):
 | nearest-001 | ✅ / ✅ | ❌ / ✅ |
 | nearest-002 | ✅ / ✅ | ❌ / ✅ |
 | within-001 | ✅ / ✅ | ❌ / ✅ |
-| pip-001 | ✅ / ✅ | ✅ / ❌ |
-| pip-002 | ✅ / ✅ | ✅ / ❌ |
+| pip-001 | ✅ / ✅ | ✅ / ✅ |
+| pip-002 | ✅ / ✅ | ✅ / ✅ |
 | decline-001 | ✅ / ✅ | ✅ / ✅ |
 | decline-002 | ✅ / ✅ | ✅ / ❌ |
