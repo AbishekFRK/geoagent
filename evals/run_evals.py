@@ -1,24 +1,38 @@
 """Eval runner for GeoAgent.
 
-    python evals/run_evals.py --validate     # check the case file (works today)
-    python evals/run_evals.py --mode agent   # run the agent over every case (milestone 4)
+    python evals/run_evals.py --validate                       # check the case file only
+    python evals/run_evals.py --models qwen2.5:14b llama3.1:8b # run every case on each model
+    python evals/run_evals.py --models qwen2.5:14b --cases dist-001 nearest-002
 
-Scoring (planned):
-  * tool selection: every tool in `expected_tools` was called (extra calls allowed)
-  * answer: number within `tolerance`; ordered_list/set/boolean compared exactly;
-    decline cases are checked for a refusal or clarifying question
+Two scores per case:
+  * tool selection: every tool in `expected_tools` was called (extra calls are allowed)
+  * answer: the final text matches the ground truth (rules below)
+
+Answer rules, kept deliberately simple and deterministic (no LLM judge):
+  number        any number in the answer is within `tolerance` of `expected`
+  ordered_list  the dataset codes mentioned, in order of first mention, equal `expected`
+  set           the dataset codes mentioned, as a set, equal `expected`
+  boolean       the answer says inside/yes (True) or outside/no/not (False)
+  decline       the answer refuses or asks a question AND states no distance in km
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
 
 CASES = Path(__file__).with_name("cases.jsonl")
+RESULTS_DIR = Path(__file__).with_name("results")
 ANSWER_TYPES = {"number", "ordered_list", "set", "boolean", "decline"}
 KNOWN_TOOLS = {"geocode", "distance_bearing", "features_within", "nearest_features", "point_in_polygon"}
+
+
+# ----------------------------------------------------------------------------- cases
 
 
 def load_cases(path: Path = CASES) -> list[dict]:
@@ -47,11 +61,169 @@ def validate(cases: list[dict]) -> list[str]:
     return problems
 
 
+# --------------------------------------------------------------------------- scoring
+
+
+def _dataset_codes() -> set[str]:
+    from geoagent import geo
+
+    return {p.code for p in geo.load_places() if p.code}
+
+
+def extract_numbers(text: str) -> list[float]:
+    out = []
+    for raw in re.findall(r"-?\d[\d,]*\.?\d*", text):
+        try:
+            out.append(float(raw.replace(",", "").rstrip(".")))
+        except ValueError:
+            pass
+    return out
+
+
+def extract_codes(text: str) -> list[str]:
+    """Dataset codes in order of first mention, without repeats."""
+    known = _dataset_codes()
+    seen: list[str] = []
+    for token in re.findall(r"\b[A-Z]{3}\b", text):
+        if token in known and token not in seen:
+            seen.append(token)
+    return seen
+
+
+def extract_boolean(text: str) -> bool | None:
+    t = text.lower()
+    if re.search(r"\b(not inside|not within|outside|is not|isn't|no)\b", t):
+        return False
+    if re.search(r"\b(yes|inside|within|true)\b", t):
+        return True
+    return None
+
+
+_DECLINE_CUES = re.compile(
+    r"(not in (the|our) (sample )?dataset|no place|not found|couldn't find|could not find|"
+    r"unable to|don't have|do not have|which |please (provide|specify|clarify)|"
+    r"could you|can you (specify|clarify)|clarify|specify|\?)",
+    re.IGNORECASE,
+)
+
+
+def is_decline(text: str) -> bool:
+    invented_distance = re.search(r"\d[\d,]*\.?\d*\s*(km|kilomet)", text, re.IGNORECASE)
+    return bool(_DECLINE_CUES.search(text)) and not invented_distance
+
+
+def score_tools(expected: list[str], called: list[str]) -> bool:
+    return set(expected) <= set(called)
+
+
+def score_answer(case: dict, answer: str) -> bool:
+    kind, expected = case["answer_type"], case["expected"]
+    if kind == "number":
+        return any(abs(n - expected) <= case["tolerance"] for n in extract_numbers(answer))
+    if kind == "ordered_list":
+        return extract_codes(answer) == expected
+    if kind == "set":
+        return set(extract_codes(answer)) == set(expected)
+    if kind == "boolean":
+        return extract_boolean(answer) is expected
+    if kind == "decline":
+        return is_decline(answer)
+    raise ValueError(f"unknown answer_type {kind!r}")
+
+
+def score_case(case: dict, result: dict) -> dict:
+    calls = result.get("tool_calls", [])
+    called = [c["name"] for c in calls]
+    answer_ok = score_answer(case, result.get("answer", ""))
+    if case["answer_type"] == "boolean":
+        # A yes/no can only be trusted if the tool actually ran. Otherwise an error
+        # message such as "the input is not valid" could be misread as an answer.
+        ran = any(c["name"] == "point_in_polygon" and not c.get("result", "").startswith("ERROR") for c in calls)
+        answer_ok = answer_ok and ran
+    return {
+        "id": case["id"],
+        "category": case["category"],
+        "tools_ok": score_tools(case["expected_tools"], called),
+        "answer_ok": answer_ok,
+        "tools_called": called,
+        "tool_results": [c.get("result", "")[:200] for c in calls],
+        "answer": result.get("answer", ""),
+        "steps": result.get("steps"),
+        "seconds": result.get("seconds"),
+        "error": result.get("error"),
+    }
+
+
+def summarize(rows: list[dict]) -> dict:
+    n = len(rows)
+    return {
+        "cases": n,
+        "tool_selection": round(sum(r["tools_ok"] for r in rows) / n, 3) if n else 0,
+        "answer_accuracy": round(sum(r["answer_ok"] for r in rows) / n, 3) if n else 0,
+        "mean_seconds": round(sum(r["seconds"] or 0 for r in rows) / n, 1) if n else 0,
+    }
+
+
+# ----------------------------------------------------------------------------- running
+
+
+def run_model(model: str, cases: list[dict]) -> list[dict]:
+    from geoagent import agent
+
+    rows = []
+    for case in cases:
+        start = time.perf_counter()
+        try:
+            result = agent.ask(case["question"], model=model)
+        except Exception as exc:  # an unreachable model or crashed run counts as a failed case
+            result = {"answer": "", "tool_calls": [], "steps": None, "error": f"{type(exc).__name__}: {exc}"}
+        result["seconds"] = round(time.perf_counter() - start, 1)
+        row = score_case(case, result)
+        rows.append(row)
+        mark = lambda ok: "PASS" if ok else "FAIL"  # noqa: E731
+        print(f"  {case['id']:<13} tools {mark(row['tools_ok'])}  answer {mark(row['answer_ok'])}  {row['seconds']}s", flush=True)
+    return rows
+
+
+def markdown_report(results: dict[str, list[dict]]) -> str:
+    lines = ["| Model | Cases | Tool selection | Answer accuracy | Mean time per case |", "|---|---|---|---|---|"]
+    for model, rows in results.items():
+        s = summarize(rows)
+        lines.append(
+            f"| `{model}` | {s['cases']} | {s['tool_selection']:.0%} | {s['answer_accuracy']:.0%} | {s['mean_seconds']} s |"
+        )
+    ids = [r["id"] for r in next(iter(results.values()))]
+    lines += ["", "Per case (tools / answer):", "", "| Case | " + " | ".join(f"`{m}`" for m in results) + " |"]
+    lines.append("|---|" + "---|" * len(results))
+    for i, cid in enumerate(ids):
+        cells = []
+        for rows in results.values():
+            r = rows[i]
+            cells.append(("✅" if r["tools_ok"] else "❌") + " / " + ("✅" if r["answer_ok"] else "❌"))
+        lines.append(f"| {cid} | " + " | ".join(cells) + " |")
+    return "\n".join(lines) + "\n"
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--validate", action="store_true", help="only check the case file")
-    parser.add_argument("--mode", choices=["agent"], help="run cases through the agent")
+    parser.add_argument("--models", nargs="+", help="model names served by your OpenAI-compatible endpoint")
+    parser.add_argument("--cases", nargs="+", help="run only these case ids")
+    parser.add_argument("--markdown", type=Path, help="also write the results tables to this file")
+    parser.add_argument("--report", type=Path, help="rebuild the tables from a saved results JSON, without running models")
     args = parser.parse_args()
+
+    # The tables contain emoji; the default Windows console encoding cannot print them.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
+    if args.report:
+        saved = json.loads(args.report.read_text(encoding="utf-8"))
+        report = markdown_report(saved["runs"])
+        print(report)
+        if args.markdown:
+            args.markdown.write_text(report, encoding="utf-8")
+        return 0
 
     cases = load_cases()
     problems = validate(cases)
@@ -59,8 +231,30 @@ def main() -> int:
         print("\n".join(problems))
         return 1
     print(f"{len(cases)} cases OK")
-    if args.mode == "agent":
-        raise NotImplementedError("Agent mode is planned for milestone 4.")
+    if args.validate or not args.models:
+        return 0
+
+    if args.cases:
+        cases = [c for c in cases if c["id"] in set(args.cases)]
+        if not cases:
+            print("No matching case ids.")
+            return 1
+
+    results: dict[str, list[dict]] = {}
+    for model in args.models:
+        print(f"\n{model}", flush=True)
+        results[model] = run_model(model, cases)
+
+    RESULTS_DIR.mkdir(exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    out = RESULTS_DIR / f"run-{stamp}.json"
+    out.write_text(json.dumps({"summary": {m: summarize(r) for m, r in results.items()}, "runs": results}, indent=2), encoding="utf-8")
+
+    report = markdown_report(results)
+    if args.markdown:
+        args.markdown.write_text(report, encoding="utf-8")
+    print("\n" + report)
+    print(f"Raw results: {out}")
     return 0
 
 
